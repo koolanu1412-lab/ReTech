@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+        <string name="app_name">रिटेक</string>
+        <string name="dashboard">डॅशबोर्ड</string>
+        <string name="locate_machines">जवळच्या मशीन्स शोधा</string>
+        <string name="scan_bottle">बाटली स्कॅन करा</string>
+        <string name="rewards">बक्षिसे</string>
+        <string name="profile">प्रोफाइल</string>
+        <string name="language">भाषा</string>
+        <string name="ai_assistant">एआय सहाय्यक</string>
+
+        <string name="choose_language">तुमची भाषा निवडा</string>
+        <string name="select_preferred_language">तुमच्या पसंतीची भाषा निवडा.</string>
+        <string name="continue_button">पुढे चला</string>
+        <string name="app_tagline">पुनर्वापर करा • बक्षिसे मिळवा • पुन्हा करा</string>
+</resources>
