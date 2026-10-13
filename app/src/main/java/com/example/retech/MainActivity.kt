@@ -40,6 +40,26 @@ import androidx.media3.ui.PlayerView
 import androidx.annotation.OptIn
 import kotlinx.coroutines.delay
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.core.content.ContextCompat
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import java.util.concurrent.Executor
+import android.net.Uri
+import android.widget.ImageView
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.ImageCapture.OutputFileOptions
+import androidx.compose.ui.viewinterop.AndroidView
+import java.io.File
+
 private val EcoGreen = Color(0xFF21BE79)
 private val DarkGreen = Color(0xFF087653)
 private val EcoBlue = Color(0xFF1976D2)
@@ -507,42 +527,130 @@ private fun RvmCard(name: String, place: String, status: String) {
     }
 }
 
+
 @Composable
 private fun ScanScreen(onDeposit: () -> Unit) {
+    var cameraOpen by rememberSaveable { mutableStateOf(false) }
     var scanComplete by rememberSaveable { mutableStateOf(false) }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) {
-        Text("‹     ${tr("Scan", "स्कैन", "स्कॅन")}                         ⓘ", fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
+    var capturedPhotoPath by rememberSaveable {
+        mutableStateOf<String?>(null)
+    }
+    if (cameraOpen) {
+        CameraPreviewScreen(
+            onBack = { cameraOpen = false },
+            onPhotoCaptured = { photoFile ->
+                cameraOpen = false
+                capturedPhotoPath = photoFile.absolutePath
+            }
+        )
+        return
+    }
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(20.dp)
+    ) {
+        Text(
+            "‹     ${tr("Scan", "स्कैन", "स्कॅन")}",
+            fontSize = 21.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+
         Spacer(Modifier.height(18.dp))
+
         Row(verticalAlignment = Alignment.CenterVertically) {
             StepLabel("1", tr("Position", "स्थिति", "स्थिती"), true, Modifier.weight(1f))
             Box(Modifier.weight(0.5f).height(1.dp).background(BorderColor))
             StepLabel("2", tr("Verify", "जांचें", "पडताळा"), scanComplete, Modifier.weight(1f))
         }
+
         Spacer(Modifier.height(24.dp))
-        Box(Modifier.fillMaxWidth().height(295.dp).clip(RoundedCornerShape(25.dp)).background(Brush.verticalGradient(listOf(Color(0xFF262C2B), Color(0xFF53635A)))), contentAlignment = Alignment.Center) {
-            Text(if (scanComplete) "✅" else "", fontSize = 76.sp)
-            Box(Modifier.fillMaxWidth(0.70f).height(175.dp).border(1.5.dp, EcoGreen, RoundedCornerShape(18.dp)))
-            Box(Modifier.fillMaxWidth(0.65f).height(3.dp).background(EcoGreen))
+
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(295.dp)
+                .clip(RoundedCornerShape(25.dp))
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color(0xFF262C2B), Color(0xFF53635A))
+                    )
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                Modifier
+                    .fillMaxWidth(0.70f)
+                    .height(175.dp)
+                    .border(1.5.dp, EcoGreen, RoundedCornerShape(18.dp))
+            )
+
             Text(
-                if (scanComplete) tr("Bottle verified (demo)", "बोतल सत्यापित (डेमो)", "बाटली पडताळली (डेमो)") else tr("◎  Align bottle within frame", "◎  बोतल को फ्रेम में रखें", "◎  बाटली चौकटीत ठेवा"),
-                Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp).clip(RoundedCornerShape(30.dp)).background(Color(0xCC171A19)).padding(horizontal = 15.dp, vertical = 9.dp),
-                color = Color.White, fontSize = 12.sp
+                tr(
+                    "Camera preview will open here",
+                    "कैमरा प्रीव्यू यहां खुलेगा",
+                    "कॅमेरा प्रीव्ह्यू येथे उघडेल"
+                ),
+                Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp),
+                color = Color.White,
+                fontSize = 12.sp
             )
         }
+
         Spacer(Modifier.height(18.dp))
+
         SectionCard {
-            Text("ⓘ   ${tr("Tips for better scanning", "बेहतर स्कैनिंग के सुझाव", "चांगल्या स्कॅनिंगसाठी टिप्स")}", fontWeight = FontWeight.SemiBold)
+            Text(
+                "ⓘ   ${tr("Scanning tips", "स्कैनिंग सुझाव", "स्कॅनिंग टिप्स")}",
+                fontWeight = FontWeight.SemiBold
+            )
             Spacer(Modifier.height(7.dp))
-            Text(tr("Ensure good lighting and remove any labels or caps for the most accurate detection.", "सही पहचान के लिए पर्याप्त रोशनी रखें और लेबल या ढक्कन हटा दें।", "अचूक ओळखीसाठी पुरेसा प्रकाश ठेवा आणि लेबल किंवा झाकण काढा."), fontSize = 12.sp, color = Color.Gray)
+            Text(
+                tr(
+                    "Keep the bottle in view and use good lighting. QR/barcode detection will be added next.",
+                    "बोतल को कैमरे के सामने रखें और अच्छी रोशनी रखें। QR/बारकोड पहचान अगली बार जोड़ी जाएगी।",
+                    "बाटली कॅमेऱ्यासमोर ठेवा आणि चांगला प्रकाश ठेवा. QR/बारकोड ओळख पुढील टप्प्यात जोडली जाईल."
+                ),
+                fontSize = 12.sp,
+                color = Color.Gray
+            )
         }
+
         Spacer(Modifier.height(16.dp))
-        PrimaryButton(if (scanComplete) tr("Scan Another Bottle", "दूसरी बोतल स्कैन करें", "दुसरी बाटली स्कॅन करा") else tr("▣  Start Scanning", "▣  स्कैन शुरू करें", "▣  स्कॅन सुरू करा")) {
-            if (!scanComplete) { onDeposit(); scanComplete = true } else scanComplete = false
+
+        PrimaryButton(
+            tr("▣  Start Scanning", "▣  स्कैन शुरू करें", "▣  स्कॅन सुरू करा")
+        ) {
+            cameraOpen = true
         }
+
+        if (capturedPhotoPath != null) {
+            Text(
+                text = "Bottle photo captured successfully! Ready for verification.",
+                color = EcoGreen,
+                fontSize = 13.sp
+            )
+        }
+
+
         Spacer(Modifier.height(10.dp))
-        Text(if (scanComplete) tr("Demo deposit added: +25 points", "डेमो जमा हुआ: +25 अंक", "डेमो जमा: +25 गुण") else tr("Camera and QR/barcode verification will be connected later.", "कैमरा और QR/बारकोड सत्यापन बाद में जोड़ा जाएगा।", "कॅमेरा आणि QR/बारकोड पडताळणी नंतर जोडली जाईल."), fontSize = 11.sp, color = Color.Gray, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+
+        Text(
+            tr(
+                "Camera access is required. Points won't be awarded until a scan is validated.",
+                "कैमरे की अनुमति जरूरी है। सत्यापन से पहले अंक नहीं मिलेंगे।",
+                "कॅमेऱ्याची परवानगी आवश्यक आहे. पडताळणी होईपर्यंत गुण मिळणार नाहीत."
+            ),
+            fontSize = 11.sp,
+            color = Color.Gray,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }
+
 
 @Composable
 private fun StepLabel(number: String, label: String, active: Boolean, modifier: Modifier = Modifier) {
@@ -819,3 +927,276 @@ private fun PrimaryButton(text: String, onClick: () -> Unit) {
         Text(text, fontSize = 15.sp)
     }
 }
+
+
+@Composable
+private fun CameraPreviewScreen(
+    onBack: () -> Unit,
+    onPhotoCaptured: (File) -> Unit
+) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    var hasPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.CAMERA
+            ) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    var imageCapture by remember {
+        mutableStateOf<ImageCapture?>(null)
+    }
+
+    var capturedFile by remember {
+        mutableStateOf<File?>(null)
+    }
+
+    var captureError by remember {
+        mutableStateOf<String?>(null)
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasPermission = granted
+    }
+
+    LaunchedEffect(Unit) {
+        if (!hasPermission) {
+            permissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(DarkGreen)
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "‹",
+                modifier = Modifier
+                    .clickable { onBack() }
+                    .padding(end = 18.dp),
+                color = Color.White,
+                fontSize = 30.sp
+            )
+
+            Text(
+                text = tr(
+                    "Scan a Bottle",
+                    "बोतल स्कैन करें",
+                    "बाटली स्कॅन करा"
+                ),
+                color = Color.White,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        if (hasPermission) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                val photo = capturedFile
+
+                if (photo != null) {
+                    AndroidView(
+                        modifier = Modifier.fillMaxSize(),
+                        factory = { viewContext ->
+                            ImageView(viewContext).apply {
+                                scaleType = ImageView.ScaleType.FIT_CENTER
+                                setBackgroundColor(android.graphics.Color.BLACK)
+                            }
+                        },
+                        update = { imageView ->
+                            imageView.setImageURI(Uri.fromFile(photo))
+                        }
+                    )
+                } else {
+                    AndroidView(
+                        modifier = Modifier.fillMaxSize(),
+                        factory = { viewContext ->
+                            val previewView = PreviewView(viewContext).apply {
+                                scaleType = PreviewView.ScaleType.FILL_CENTER
+                            }
+
+                            val cameraProviderFuture =
+                                ProcessCameraProvider.getInstance(viewContext)
+
+                            cameraProviderFuture.addListener({
+                                try {
+                                    val cameraProvider =
+                                        cameraProviderFuture.get()
+
+                                    val preview = Preview.Builder().build()
+                                    val capture = ImageCapture.Builder()
+                                        .setCaptureMode(
+                                            ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY
+                                        )
+                                        .build()
+
+                                    preview.surfaceProvider =
+                                        previewView.surfaceProvider
+
+                                    cameraProvider.unbindAll()
+
+                                    cameraProvider.bindToLifecycle(
+                                        lifecycleOwner,
+                                        CameraSelector.DEFAULT_BACK_CAMERA,
+                                        preview,
+                                        capture
+                                    )
+
+                                    imageCapture = capture
+                                } catch (exception: Exception) {
+                                    captureError =
+                                        "Unable to start camera. Please try again."
+                                    android.util.Log.e(
+                                        "ReTechCamera",
+                                        "Camera setup failed",
+                                        exception
+                                    )
+                                }
+                            }, ContextCompat.getMainExecutor(viewContext))
+
+                            previewView
+                        }
+                    )
+                }
+            }
+
+            Text(
+                text = captureError ?: if (capturedFile == null) {
+                    tr(
+                        "Position the bottle and tap Capture Photo",
+                        "बोतल रखें और फोटो खींचें",
+                        "बाटली ठेवा आणि फोटो काढा"
+                    )
+                } else {
+                    tr(
+                        "Check your photo before continuing",
+                        "आगे बढ़ने से पहले फोटो देखें",
+                        "पुढे जाण्यापूर्वी फोटो तपासा"
+                    )
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                color = if (captureError == null) Color.White else Color.Red,
+                textAlign = TextAlign.Center
+            )
+
+            if (capturedFile == null) {
+                Button(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                    enabled = imageCapture != null,
+                    onClick = {
+                        val capture = imageCapture ?: return@Button
+
+                        val photoFile = File(
+                            context.cacheDir,
+                            "retech_bottle_${System.currentTimeMillis()}.jpg"
+                        )
+
+                        val outputOptions = OutputFileOptions
+                            .Builder(photoFile)
+                            .build()
+
+                        capture.takePicture(
+                            outputOptions,
+                            ContextCompat.getMainExecutor(context),
+                            object : ImageCapture.OnImageSavedCallback {
+                                override fun onImageSaved(
+                                    outputFileResults: ImageCapture.OutputFileResults
+                                ) {
+                                    capturedFile = photoFile
+                                    captureError = null
+                                }
+
+                                override fun onError(
+                                    exception: ImageCaptureException
+                                ) {
+                                    captureError =
+                                        "Photo failed. Please try again."
+                                    android.util.Log.e(
+                                        "ReTechCamera",
+                                        "Photo capture failed",
+                                        exception
+                                    )
+                                }
+                            }
+                        )
+                    }
+                ) {
+                    Text("📷  Capture Photo")
+                }
+            } else {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Button(
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            capturedFile = null
+                            captureError = null
+                        }
+                    ) {
+                        Text("Retake")
+                    }
+
+                    Button(
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            capturedFile?.let(onPhotoCaptured)
+                        }
+                    ) {
+                        Text("Use Photo")
+                    }
+                }
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    "Camera permission is needed to take a bottle photo.",
+                    color = Color.White,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(Modifier.height(16.dp))
+
+                Button(
+                    onClick = {
+                        permissionLauncher.launch(Manifest.permission.CAMERA)
+                    }
+                ) {
+                    Text("Grant Permission")
+                }
+            }
+        }
+    }
+}
+
