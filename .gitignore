@@ -13,3 +13,20 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# ReTech backend secrets and local files
+backend/.env
+backend/.venv/
+backend/__pycache__/
+backend/*.db
+
+# Kotlin and Gradle generated files
+.kotlin/
+.gradle/
+**/build/
+
+# Python generated files and secrets
+__pycache__/
+.venv/
+.env
+*.db

@@ -1,6 +1,13 @@
 package com.example.retech
 
 import android.os.Bundle
+import android.util.Patterns
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
@@ -17,7 +24,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.*
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,6 +70,9 @@ import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageCapture.OutputFileOptions
 import androidx.compose.ui.viewinterop.AndroidView
 import java.io.File
+
+// Replace this with your actual Render HTTPS service URL after deployment.
+private const val RETECH_API_BASE_URL = "PASTE_YOUR_RENDER_HTTPS_URL_HERE"
 
 private val EcoGreen = Color(0xFF21BE79)
 private val DarkGreen = Color(0xFF087653)
@@ -115,6 +129,7 @@ class MainActivity : AppCompatActivity() {
 
 @Composable
 fun ReTechApp() {
+    val context = LocalContext.current
     var route by rememberSaveable { mutableStateOf("splash") }
     var language by rememberSaveable { mutableStateOf(currentLanguageTag()) }
     var email by rememberSaveable { mutableStateOf("") }
@@ -150,7 +165,15 @@ fun ReTechApp() {
         "login" -> LoginScreen(
             email = email,
             onEmailChange = { email = it },
-            onLogin = { route = "main" }
+            onAuthenticated = { authenticatedEmail, accessToken ->
+                context.getSharedPreferences("retech_auth", android.content.Context.MODE_PRIVATE)
+                    .edit()
+                    .putString("email", authenticatedEmail)
+                    .putString("access_token", accessToken)
+                    .apply()
+                email = authenticatedEmail
+                route = "main"
+            }
         )
         else -> MainApp(
             selectedTab = runCatching { MainTab.valueOf(selectedTab) }.getOrDefault(MainTab.HOME),
@@ -243,30 +266,161 @@ private fun LanguageScreen(language: String, onSelect: (String) -> Unit, onConti
 }
 
 @Composable
-private fun LoginScreen(email: String, onEmailChange: (String) -> Unit, onLogin: () -> Unit) {
+private fun LoginScreen(
+    email: String,
+    onEmailChange: (String) -> Unit,
+    onAuthenticated: (String, String) -> Unit
+) {
+    var password by rememberSaveable { mutableStateOf("") }
+    var isRegistering by rememberSaveable { mutableStateOf(false) }
+    var isLoading by remember { mutableStateOf(false) }
+    var statusMessage by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
     Column(
         Modifier.fillMaxSize().background(Color.White).verticalScroll(rememberScrollState()).padding(26.dp),
         verticalArrangement = Arrangement.Center
     ) {
-        Text(tr("Welcome back!", "वापसी पर स्वागत है!", "पुन्हा स्वागत आहे!"), fontSize = 31.sp, fontWeight = FontWeight.Bold, color = DarkGreen)
+        Text(
+            if (isRegistering) tr("Create your account", "अपना खाता बनाएं", "तुमचे खाते तयार करा")
+            else tr("Welcome back!", "वापसी पर स्वागत है!", "पुन्हा स्वागत आहे!"),
+            fontSize = 31.sp, fontWeight = FontWeight.Bold, color = DarkGreen
+        )
         Spacer(Modifier.height(8.dp))
         Text(tr("Join the ReTech recycling community.", "ReTech रीसाइक्लिंग समुदाय से जुड़ें।", "ReTech पुनर्वापर समुदायात सामील व्हा."))
         Spacer(Modifier.height(25.dp))
         OutlinedTextField(
             value = email,
-            onValueChange = onEmailChange,
+            onValueChange = { onEmailChange(it); statusMessage = null },
             label = { Text(tr("Email address", "ईमेल पता", "ईमेल पत्ता")) },
             placeholder = { Text(tr("Enter your email", "अपना ईमेल दर्ज करें", "तुमचा ईमेल टाका")) },
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+            singleLine = true,
+            enabled = !isLoading,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
         )
-        Spacer(Modifier.height(22.dp))
-        PrimaryButton(tr("Continue to ReTech", "ReTech पर आगे बढ़ें", "ReTech वर पुढे चला"), onLogin)
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(12.dp))
+        OutlinedTextField(
+            value = password,
+            onValueChange = { password = it; statusMessage = null },
+            label = { Text(tr("Password", "पासवर्ड", "पासवर्ड")) },
+            placeholder = { Text(tr("At least 8 characters", "कम से कम 8 अक्षर", "किमान 8 अक्षरे")) },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            enabled = !isLoading,
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+        )
+        if (statusMessage != null) {
+            Spacer(Modifier.height(10.dp))
+            Text(statusMessage!!, color = Color(0xFFB3261E), fontSize = 13.sp)
+        }
+        Spacer(Modifier.height(20.dp))
+        PrimaryButton(
+            text = if (isLoading) tr("Please wait…", "कृपया प्रतीक्षा करें…", "कृपया थांबा…")
+            else if (isRegistering) tr("Create Account", "खाता बनाएं", "खाते तयार करा")
+            else tr("Sign In", "लॉग इन करें", "साइन इन करा"),
+            onClick = {
+                val normalizedEmail = email.trim()
+                when {
+                    normalizedEmail.isBlank() -> statusMessage = tr("Please enter your email address.", "कृपया ईमेल पता दर्ज करें।", "कृपया ईमेल पत्ता टाका.")
+                    !Patterns.EMAIL_ADDRESS.matcher(normalizedEmail).matches() -> statusMessage = tr("Please enter a valid email address.", "कृपया सही ईमेल पता दर्ज करें।", "कृपया वैध ईमेल पत्ता टाका.")
+                    password.length < 8 -> statusMessage = tr("Password must be at least 8 characters.", "पासवर्ड कम से कम 8 अक्षरों का होना चाहिए।", "पासवर्ड किमान 8 अक्षरांचा असावा.")
+                    else -> {
+                        isLoading = true
+                        statusMessage = null
+                        scope.launch {
+                            val result = withContext(Dispatchers.IO) {
+                                authenticateWithBackend(normalizedEmail, password, isRegistering)
+                            }
+                            isLoading = false
+                            if (result.accessToken != null) {
+                                onAuthenticated(normalizedEmail, result.accessToken)
+                            } else {
+                                statusMessage = result.message
+                            }
+                        }
+                    }
+                }
+            }
+        )
+        TextButton(
+            onClick = {
+                isRegistering = !isRegistering
+                statusMessage = null
+            },
+            enabled = !isLoading,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                if (isRegistering) tr("Already have an account? Sign in", "पहले से खाता है? लॉग इन करें", "आधीच खाते आहे? साइन इन करा")
+                else tr("New to ReTech? Create an account", "ReTech पर नए हैं? खाता बनाएं", "ReTech वर नवीन आहात? खाते तयार करा")
+            )
+        }
         Text(
-            tr("Prototype mode: account authentication is not connected yet.", "प्रोटोटाइप मोड: खाता लॉगिन अभी जुड़ा नहीं है।", "प्रोटोटाइप मोड: खातेचे प्रमाणीकरण अद्याप जोडलेले नाही."),
-            fontSize = 12.sp, color = Color.Gray
+            tr("Use an internet connection to sign in.", "लॉग इन करने के लिए इंटरनेट कनेक्शन इस्तेमाल करें।", "साइन इन करण्यासाठी इंटरनेट कनेक्शन वापरा."),
+            fontSize = 12.sp, color = Color.Gray, textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
         )
+    }
+}
+
+private data class AuthCallResult(val accessToken: String? = null, val message: String = "")
+
+private fun authenticateWithBackend(email: String, password: String, register: Boolean): AuthCallResult {
+    val baseUrl = RETECH_API_BASE_URL.trimEnd('/')
+    if (!baseUrl.startsWith("https://") || baseUrl.contains("PASTE_YOUR_RENDER")) {
+        return AuthCallResult(message = "Backend URL is not configured yet. Deploy the backend to Render and paste its HTTPS URL into MainActivity.kt.")
+    }
+
+    return try {
+        if (register) {
+            val (registerCode, registerBody) = postAuthJson(
+                "$baseUrl/auth/register",
+                JSONObject().put("email", email).put("password", password)
+            )
+            if (registerCode !in 200..299) {
+                val detail = runCatching { JSONObject(registerBody).optString("detail") }.getOrNull()
+                return AuthCallResult(message = detail?.takeIf { it.isNotBlank() }
+                    ?: "Registration failed. Please try again.")
+            }
+        }
+
+        val (loginCode, loginBody) = postAuthJson(
+            "$baseUrl/auth/login",
+            JSONObject().put("email", email).put("password", password)
+        )
+        if (loginCode !in 200..299) {
+            val detail = runCatching { JSONObject(loginBody).optString("detail") }.getOrNull()
+            AuthCallResult(message = detail?.takeIf { it.isNotBlank() }
+                ?: "Sign-in failed. Check your email and password.")
+        } else {
+            val token = JSONObject(loginBody).optString("access_token").takeIf { it.isNotBlank() }
+            if (token == null) AuthCallResult(message = "The server did not return a login token.")
+            else AuthCallResult(accessToken = token)
+        }
+    } catch (exception: Exception) {
+        AuthCallResult(message = "Could not contact ReTech server. Check your internet connection and try again.")
+    }
+}
+
+private fun postAuthJson(url: String, body: JSONObject): Pair<Int, String> {
+    val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+        requestMethod = "POST"
+        connectTimeout = 12000
+        readTimeout = 15000
+        doOutput = true
+        setRequestProperty("Content-Type", "application/json; charset=utf-8")
+        setRequestProperty("Accept", "application/json")
+    }
+    return try {
+        connection.outputStream.use { output -> output.write(body.toString().toByteArray(Charsets.UTF_8)) }
+        val code = connection.responseCode
+        val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+        val response = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+        code to response
+    } finally {
+        connection.disconnect()
     }
 }
 
@@ -1199,4 +1353,3 @@ private fun CameraPreviewScreen(
         }
     }
 }
-
