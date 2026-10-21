@@ -56,6 +56,7 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.core.content.ContextCompat
 import androidx.camera.core.CameraSelector
@@ -68,11 +69,10 @@ import android.widget.ImageView
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageCapture.OutputFileOptions
-import androidx.compose.ui.viewinterop.AndroidView
 import java.io.File
 
 // Replace this with your actual Render HTTPS service URL after deployment.
-private const val RETECH_API_BASE_URL = "PASTE_YOUR_RENDER_HTTPS_URL_HERE"
+private const val RETECH_API_BASE_URL = "https://retech-backend-4971.onrender.com"
 
 private val EcoGreen = Color(0xFF21BE79)
 private val DarkGreen = Color(0xFF087653)
@@ -153,18 +153,33 @@ fun ReTechApp() {
 
     when (route) {
         "splash" -> SplashScreen()
-        "welcome" -> WelcomeScreen { route = "language" }
-        "language" -> LanguageScreen(
+        "welcome" -> WelcomeScreen { route = "login" }
+        "language" -> LoginScreen(
+            email = email,
+            onEmailChange = { email = it },
             language = language,
-            onSelect = { tag ->
+            onLanguageChange = { tag ->
                 language = tag
                 AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(tag))
             },
-            onContinue = { route = "login" }
+            onAuthenticated = { authenticatedEmail, accessToken ->
+                context.getSharedPreferences("retech_auth", android.content.Context.MODE_PRIVATE)
+                    .edit()
+                    .putString("email", authenticatedEmail)
+                    .putString("access_token", accessToken)
+                    .apply()
+                email = authenticatedEmail
+                route = "main"
+            }
         )
         "login" -> LoginScreen(
             email = email,
             onEmailChange = { email = it },
+            language = language,
+            onLanguageChange = { tag ->
+                language = tag
+                AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(tag))
+            },
             onAuthenticated = { authenticatedEmail, accessToken ->
                 context.getSharedPreferences("retech_auth", android.content.Context.MODE_PRIVATE)
                     .edit()
@@ -269,6 +284,8 @@ private fun LanguageScreen(language: String, onSelect: (String) -> Unit, onConti
 private fun LoginScreen(
     email: String,
     onEmailChange: (String) -> Unit,
+    language: String,
+    onLanguageChange: (String) -> Unit,
     onAuthenticated: (String, String) -> Unit
 ) {
     var password by rememberSaveable { mutableStateOf("") }
@@ -281,6 +298,32 @@ private fun LoginScreen(
         Modifier.fillMaxSize().background(Color.White).verticalScroll(rememberScrollState()).padding(26.dp),
         verticalArrangement = Arrangement.Center
     ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                tr("Language", "भाषा", "भाषा"),
+                color = Color.Gray,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(end = 6.dp)
+            )
+            listOf("EN" to "en", "हिं" to "hi", "मरा" to "mr").forEach { (label, tag) ->
+                TextButton(
+                    onClick = { onLanguageChange(tag) },
+                    enabled = !isLoading,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        label,
+                        color = if (language == tag) DarkGreen else Color.Gray,
+                        fontWeight = if (language == tag) FontWeight.Bold else FontWeight.Normal
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
         Text(
             if (isRegistering) tr("Create your account", "अपना खाता बनाएं", "तुमचे खाते तयार करा")
             else tr("Welcome back!", "वापसी पर स्वागत है!", "पुन्हा स्वागत आहे!"),
@@ -626,75 +669,195 @@ private fun ActivityCard(item: RecentActivity) {
     }
 }
 
+
 @Composable
 private fun MapScreen() {
     var search by rememberSaveable { mutableStateOf("") }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        Box(Modifier.fillMaxWidth().height(245.dp)) {
+
+    val machines = listOf(
+        Triple(
+            "RVM #12 – Central Mall",
+            tr("Level 2, Food Court", "दूसरी मंज़िल, फूड कोर्ट", "दुसरा मजला, फूड कोर्ट"),
+            "operational"
+        ),
+        Triple(
+            "RVM #08 – Green Park",
+            tr("Main Entrance Plaza", "मुख्य प्रवेश द्वार", "मुख्य प्रवेशद्वार"),
+            "operational"
+        ),
+        Triple(
+            "RVM #15 – City Center",
+            tr("North Gate, Near ATM", "उत्तर द्वार, ATM के पास", "उत्तर गेट, ATM जवळ"),
+            "almost"
+        )
+    )
+
+    val filteredMachines = machines.filter {
+        it.first.contains(search.trim(), ignoreCase = true) ||
+        it.second.contains(search.trim(), ignoreCase = true)
+    }
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(245.dp)
+        ) {
             Canvas(Modifier.fillMaxSize()) {
                 drawRect(Color(0xFFE7F0E1))
-                drawLine(Color.White, Offset(0f, size.height * 0.24f), Offset(size.width, size.height * 0.62f), strokeWidth = 28f, cap = StrokeCap.Round)
-                drawLine(Color.White, Offset(size.width * 0.14f, 0f), Offset(size.width * 0.62f, size.height), strokeWidth = 21f, cap = StrokeCap.Round)
-                drawLine(Color(0xFFB5D6EF), Offset(0f, size.height * 0.80f), Offset(size.width, size.height * 0.36f), strokeWidth = 8f, cap = StrokeCap.Round)
-                drawLine(Color.White, Offset(size.width * 0.85f, 0f), Offset(size.width * 0.32f, size.height), strokeWidth = 14f, cap = StrokeCap.Round)
+                drawLine(
+                    Color.White,
+                    Offset(0f, size.height * 0.24f),
+                    Offset(size.width, size.height * 0.62f),
+                    strokeWidth = 28f,
+                    cap = StrokeCap.Round
+                )
+                drawLine(
+                    Color.White,
+                    Offset(size.width * 0.14f, 0f),
+                    Offset(size.width * 0.62f, size.height),
+                    strokeWidth = 21f,
+                    cap = StrokeCap.Round
+                )
+                drawLine(
+                    Color(0xFFB5D6EF),
+                    Offset(0f, size.height * 0.80f),
+                    Offset(size.width, size.height * 0.36f),
+                    strokeWidth = 8f,
+                    cap = StrokeCap.Round
+                )
+                drawLine(
+                    Color.White,
+                    Offset(size.width * 0.85f, 0f),
+                    Offset(size.width * 0.32f, size.height),
+                    strokeWidth = 14f,
+                    cap = StrokeCap.Round
+                )
             }
-            Text("📍", Modifier.align(Alignment.Center).offset(x = 20.dp, y = 20.dp), fontSize = 30.sp)
-            Text("♻️", Modifier.align(Alignment.Center).offset(x = (-68).dp, y = (-24).dp), fontSize = 25.sp)
+
+            Text(
+                "📍",
+                Modifier
+                    .align(Alignment.Center)
+                    .offset(x = 20.dp, y = 20.dp),
+                fontSize = 30.sp
+            )
+
+            Text(
+                "♻️",
+                Modifier
+                    .align(Alignment.Center)
+                    .offset(x = (-68).dp, y = (-24).dp),
+                fontSize = 25.sp
+            )
+
             OutlinedTextField(
-                value = search, onValueChange = { search = it },
-                modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter).padding(12.dp),
-                placeholder = { Text(tr("Search for RVMs...", "रीसाइक्लिंग मशीन खोजें...", "पुनर्वापर मशीन शोधा..."), fontSize = 13.sp) },
-                singleLine = true, shape = RoundedCornerShape(30.dp),
-                colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = Color.White, focusedContainerColor = Color.White)
+                value = search,
+                onValueChange = { search = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.TopCenter)
+                    .padding(12.dp),
+                placeholder = {
+                    Text(
+                        tr(
+                            "Search for RVMs...",
+                            "रीसाइक्लिंग मशीन खोजें...",
+                            "पुनर्वापर मशीन शोधा..."
+                        ),
+                        fontSize = 13.sp
+                    )
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(30.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedContainerColor = Color.White,
+                    focusedContainerColor = Color.White
+                )
             )
         }
+
         Column(Modifier.padding(18.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(tr("Nearby RVMs", "आस-पास की रीसाइक्लिंग मशीनें", "जवळच्या पुनर्वापर मशीन"), fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    tr(
+                        "Nearby RVMs",
+                        "आस-पास की रीसाइक्लिंग मशीनें",
+                        "जवळच्या पुनर्वापर मशीन"
+                    ),
+                    fontSize = 19.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
                 Spacer(Modifier.weight(1f))
-                Text(tr("Demo locations", "डेमो स्थान", "डेमो ठिकाणे"), fontSize = 11.sp, color = Color.Gray)
+
+                Text(
+                    tr("Demo locations", "डेमो स्थान", "डेमो ठिकाणे"),
+                    fontSize = 11.sp,
+                    color = Color.Gray
+                )
             }
+
             Spacer(Modifier.height(12.dp))
-            RvmCard("RVM #12 – Central Mall", tr("Level 2, Food Court", "दूसरी मंज़िल, फूड कोर्ट", "दुसरा मजला, फूड कोर्ट"), "operational")
-            RvmCard("RVM #08 – Green Park", tr("Main Entrance Plaza", "मुख्य प्रवेश द्वार", "मुख्य प्रवेशद्वार"), "operational")
-            RvmCard("RVM #15 – City Center", tr("North Gate, Near ATM", "उत्तर द्वार, ATM के पास", "उत्तर गेट, ATM जवळ"), "almost")
+
+            if (filteredMachines.isEmpty()) {
+                Text(
+                    tr(
+                        "No matching machines found.",
+                        "कोई मिलती-जुलती मशीन नहीं मिली।",
+                        "जुळणारे मशीन सापडले नाही."
+                    ),
+                    color = Color.Gray,
+                    modifier = Modifier.padding(vertical = 16.dp)
+                )
+            } else {
+                filteredMachines.forEach { machine ->
+                    RvmCard(
+                        machine.first,
+                        machine.second,
+                        machine.third
+                    )
+                }
+            }
+
             Spacer(Modifier.height(8.dp))
-            Text(tr("Map and machine statuses are sample data. Live location is not connected.", "नक्शा और मशीन की स्थिति नमूना डेटा है। लाइव लोकेशन अभी जुड़ी नहीं है।", "नकाशा आणि मशीनची स्थिती नमुना माहिती आहे. प्रत्यक्ष लोकेशन जोडलेले नाही."), fontSize = 11.sp, color = Color.Gray)
+
+            Text(
+                tr(
+                    "Map and machine statuses are sample data. Live location is not connected.",
+                    "नक्शा और मशीन की स्थिति नमूना डेटा है। लाइव लोकेशन अभी जुड़ी नहीं है।",
+                    "नकाशा आणि मशीनची स्थिती नमुना माहिती आहे. प्रत्यक्ष लोकेशन जोडलेले नाही."
+                ),
+                fontSize = 11.sp,
+                color = Color.Gray
+            )
         }
     }
 }
 
-@Composable
-private fun RvmCard(name: String, place: String, status: String) {
-    val statusText = if (status == "almost") tr("Almost Full", "लगभग भरी हुई", "जवळपास भरलेली") else tr("Operational", "चालू है", "कार्यरत")
-    Card(Modifier.fillMaxWidth().padding(vertical = 6.dp), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Color.White), border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)) {
-        Row(Modifier.padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("♻", color = EcoGreen, fontSize = 26.sp)
-            Spacer(Modifier.width(13.dp))
-            Column(Modifier.weight(1f)) {
-                Text(name, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                Text(place, color = Color.Gray, fontSize = 11.sp)
-                Text("• $statusText", fontSize = 11.sp, color = if (status == "almost") Color(0xFFE39A19) else EcoGreen)
-            }
-            Text("◆", color = EcoGreen)
-        }
-    }
-}
 
 
 @Composable
 private fun ScanScreen(onDeposit: () -> Unit) {
     var cameraOpen by rememberSaveable { mutableStateOf(false) }
     var scanComplete by rememberSaveable { mutableStateOf(false) }
+    var verified by rememberSaveable { mutableStateOf(false) }
     var capturedPhotoPath by rememberSaveable {
         mutableStateOf<String?>(null)
     }
+
     if (cameraOpen) {
         CameraPreviewScreen(
             onBack = { cameraOpen = false },
             onPhotoCaptured = { photoFile ->
                 cameraOpen = false
                 capturedPhotoPath = photoFile.absolutePath
+                scanComplete = true
+                verified = false
             }
         )
         return
@@ -715,87 +878,195 @@ private fun ScanScreen(onDeposit: () -> Unit) {
         Spacer(Modifier.height(18.dp))
 
         Row(verticalAlignment = Alignment.CenterVertically) {
-            StepLabel("1", tr("Position", "स्थिति", "स्थिती"), true, Modifier.weight(1f))
-            Box(Modifier.weight(0.5f).height(1.dp).background(BorderColor))
-            StepLabel("2", tr("Verify", "जांचें", "पडताळा"), scanComplete, Modifier.weight(1f))
+            StepLabel(
+                "1",
+                tr("Position", "स्थिति", "स्थिती"),
+                !scanComplete,
+                Modifier.weight(1f)
+            )
+            Box(
+                Modifier
+                    .weight(0.5f)
+                    .height(1.dp)
+                    .background(BorderColor)
+            )
+            StepLabel(
+                "2",
+                tr("Verify", "जांचें", "पडताळा"),
+                scanComplete,
+                Modifier.weight(1f)
+            )
         }
 
         Spacer(Modifier.height(24.dp))
 
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(295.dp)
-                .clip(RoundedCornerShape(25.dp))
-                .background(
-                    Brush.verticalGradient(
-                        listOf(Color(0xFF262C2B), Color(0xFF53635A))
-                    )
-                ),
-            contentAlignment = Alignment.Center
-        ) {
+        if (!scanComplete) {
             Box(
                 Modifier
-                    .fillMaxWidth(0.70f)
-                    .height(175.dp)
-                    .border(1.5.dp, EcoGreen, RoundedCornerShape(18.dp))
-            )
+                    .fillMaxWidth()
+                    .height(295.dp)
+                    .clip(RoundedCornerShape(25.dp))
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                Color(0xFF262C2B),
+                                Color(0xFF53635A)
+                            )
+                        )
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxWidth(0.70f)
+                        .height(175.dp)
+                        .border(
+                            1.5.dp,
+                            EcoGreen,
+                            RoundedCornerShape(18.dp)
+                        )
+                )
 
-            Text(
-                tr(
-                    "Camera preview will open here",
-                    "कैमरा प्रीव्यू यहां खुलेगा",
-                    "कॅमेरा प्रीव्ह्यू येथे उघडेल"
-                ),
-                Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp),
-                color = Color.White,
-                fontSize = 12.sp
-            )
-        }
+                Text(
+                    tr(
+                        "Camera preview will open here",
+                        "कैमरा प्रीव्यू यहां खुलेगा",
+                        "कॅमेरा प्रीव्ह्यू येथे उघडेल"
+                    ),
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 24.dp),
+                    color = Color.White,
+                    fontSize = 12.sp
+                )
+            }
 
-        Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(18.dp))
 
-        SectionCard {
-            Text(
-                "ⓘ   ${tr("Scanning tips", "स्कैनिंग सुझाव", "स्कॅनिंग टिप्स")}",
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(Modifier.height(7.dp))
-            Text(
-                tr(
-                    "Keep the bottle in view and use good lighting. QR/barcode detection will be added next.",
-                    "बोतल को कैमरे के सामने रखें और अच्छी रोशनी रखें। QR/बारकोड पहचान अगली बार जोड़ी जाएगी।",
-                    "बाटली कॅमेऱ्यासमोर ठेवा आणि चांगला प्रकाश ठेवा. QR/बारकोड ओळख पुढील टप्प्यात जोडली जाईल."
-                ),
-                fontSize = 12.sp,
-                color = Color.Gray
-            )
+            SectionCard {
+                Text(
+                    "ⓘ   ${tr("Scanning tips", "स्कैनिंग सुझाव", "स्कॅनिंग टिप्स")}",
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.height(7.dp))
+                Text(
+                    tr(
+                        "Keep the bottle in view and use good lighting. QR/barcode detection will be added next.",
+                        "बोतल को कैमरे के सामने रखें और अच्छी रोशनी रखें। QR/बारकोड पहचान अगली बार जोड़ी जाएगी।",
+                        "बाटली कॅमेऱ्यासमोर ठेवा आणि चांगला प्रकाश ठेवा. QR/बारकोड ओळख पुढील टप्प्यात जोडली जाईल."
+                    ),
+                    fontSize = 12.sp,
+                    color = Color.Gray
+                )
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            PrimaryButton(
+                tr("▣  Start Scanning", "▣  स्कैन शुरू करें", "▣  स्कॅन सुरू करा")
+            ) {
+                cameraOpen = true
+            }
+        } else {
+            SectionCard {
+                Text(
+                    tr("Verify Bottle", "बोतल सत्यापित करें", "बाटली पडताळा"),
+                    fontSize = 19.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                val photoFile = capturedPhotoPath?.let { File(it) }
+
+                if (photoFile != null && photoFile.exists()) {
+                    AndroidView(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(260.dp)
+                            .clip(RoundedCornerShape(16.dp)),
+                        factory = { context ->
+                            ImageView(context).apply {
+                                scaleType = ImageView.ScaleType.FIT_CENTER
+                                setBackgroundColor(android.graphics.Color.BLACK)
+                            }
+                        },
+                        update = { imageView ->
+                            imageView.setImageURI(Uri.fromFile(photoFile))
+                        }
+                    )
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                Text(
+                    if (verified) {
+                        tr(
+                            "Demo verification completed!",
+                            "डेमो सत्यापन पूरा हुआ!",
+                            "डेमो पडताळणी पूर्ण झाली!"
+                        )
+                    } else {
+                        tr(
+                            "Review your bottle photo before continuing.",
+                            "आगे बढ़ने से पहले फोटो देखें।",
+                            "पुढे जाण्यापूर्वी फोटो तपासा."
+                        )
+                    },
+                    color = EcoGreen,
+                    fontSize = 13.sp
+                )
+
+                Spacer(Modifier.height(16.dp))
+
+                if (!verified) {
+                    PrimaryButton(
+                        tr(
+                            "✓  Confirm Demo Verification",
+                            "✓  डेमो सत्यापन करें",
+                            "✓  डेमो पडताळणी करा"
+                        )
+                    ) {
+                        verified = true
+                        onDeposit()
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+
+                    OutlinedButton(
+                        onClick = {
+                            capturedPhotoPath = null
+                            scanComplete = false
+                            verified = false
+                            cameraOpen = true
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(tr("Retake Photo", "फोटो दोबारा लें", "पुन्हा फोटो काढा"))
+                    }
+                } else {
+                    PrimaryButton(
+                        tr(
+                            "Scan Another Bottle",
+                            "दूसरी बोतल स्कैन करें",
+                            "दुसरी बाटली स्कॅन करा"
+                        )
+                    ) {
+                        capturedPhotoPath = null
+                        scanComplete = false
+                        verified = false
+                    }
+                }
+            }
         }
 
         Spacer(Modifier.height(16.dp))
 
-        PrimaryButton(
-            tr("▣  Start Scanning", "▣  स्कैन शुरू करें", "▣  स्कॅन सुरू करा")
-        ) {
-            cameraOpen = true
-        }
-
-        if (capturedPhotoPath != null) {
-            Text(
-                text = "Bottle photo captured successfully! Ready for verification.",
-                color = EcoGreen,
-                fontSize = 13.sp
-            )
-        }
-
-
-        Spacer(Modifier.height(10.dp))
-
         Text(
             tr(
-                "Camera access is required. Points won't be awarded until a scan is validated.",
-                "कैमरे की अनुमति जरूरी है। सत्यापन से पहले अंक नहीं मिलेंगे।",
-                "कॅमेऱ्याची परवानगी आवश्यक आहे. पडताळणी होईपर्यंत गुण मिळणार नाहीत."
+                "QR/barcode validation is not connected yet. Demo verification does not confirm that the item is recyclable.",
+                "QR/बारकोड सत्यापन अभी उपलब्ध नहीं है। डेमो सत्यापन से पुनर्चक्रण की पुष्टि नहीं होती।",
+                "QR/बारकोड पडताळणी अद्याप जोडलेली नाही. डेमो पडताळणीमुळे वस्तू पुनर्वापरयोग्य असल्याची खात्री होत नाही."
             ),
             fontSize = 11.sp,
             color = Color.Gray,
@@ -805,17 +1076,162 @@ private fun ScanScreen(onDeposit: () -> Unit) {
     }
 }
 
-
 @Composable
-private fun StepLabel(number: String, label: String, active: Boolean, modifier: Modifier = Modifier) {
-    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-        Box(Modifier.size(24.dp).clip(CircleShape).background(if (active) EcoGreen else Color(0xFFEDF1EF)), contentAlignment = Alignment.Center) {
-            Text(number, color = if (active) Color.White else Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+private fun StepLabel(
+    number: String,
+    label: String,
+    active: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        Box(
+            Modifier
+                .size(24.dp)
+                .clip(CircleShape)
+                .background(if (active) EcoGreen else Color(0xFFEDF1EF)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                number,
+                color = if (active) Color.White else Color.Gray,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
         Spacer(Modifier.width(5.dp))
         Text(label, fontSize = 11.sp)
     }
 }
+
+@Composable
+private fun RvmCard(name: String, place: String, status: String) {
+    var showDetails by remember { mutableStateOf(false) }
+
+    val statusText =
+        if (status == "almost") {
+            tr("Almost Full", "लगभग भरी हुई", "जवळपास भरलेली")
+        } else {
+            tr("Operational", "चालू है", "कार्यरत")
+        }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+            .clickable { showDetails = true },
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color.White
+        ),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            BorderColor
+        )
+    ) {
+        Row(
+            Modifier.padding(15.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("♻", color = EcoGreen, fontSize = 26.sp)
+
+            Spacer(Modifier.width(13.dp))
+
+            Column(Modifier.weight(1f)) {
+                Text(
+                    name,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp
+                )
+
+                Text(
+                    place,
+                    color = Color.Gray,
+                    fontSize = 11.sp
+                )
+
+                Text(
+                    "• $statusText",
+                    fontSize = 11.sp,
+                    color = if (status == "almost") {
+                        Color(0xFFE39A19)
+                    } else {
+                        EcoGreen
+                    }
+                )
+            }
+
+            Text("◆", color = EcoGreen)
+        }
+    }
+
+    if (showDetails) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showDetails = false },
+            title = {
+                Text(
+                    tr(
+                        "Machine Details",
+                        "मशीन की जानकारी",
+                        "मशीनची माहिती"
+                    ),
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column {
+                    Text(name, fontWeight = FontWeight.SemiBold)
+
+                    Spacer(Modifier.height(8.dp))
+
+                    Text(
+                        tr("Location: ", "स्थान: ", "ठिकाण: ") + place
+                    )
+
+                    Spacer(Modifier.height(8.dp))
+
+                    Text(
+                        tr(
+                            "Demo status: ",
+                            "डेमो स्थिति: ",
+                            "डेमो स्थिती: "
+                        ) + statusText,
+                        color = if (status == "almost") {
+                            Color(0xFFE39A19)
+                        } else {
+                            EcoGreen
+                        }
+                    )
+
+                    Spacer(Modifier.height(12.dp))
+
+                    Text(
+                        tr(
+                            "This is sample information. Live location, capacity sensors, and machine connectivity are not connected.",
+                            "यह नमूना जानकारी है। लाइव लोकेशन, क्षमता सेंसर और मशीन कनेक्टिविटी अभी जुड़ी नहीं हैं।",
+                            "ही नमुना माहिती आहे. प्रत्यक्ष लोकेशन, क्षमता सेन्सर आणि मशीन कनेक्टिव्हिटी अजून जोडलेली नाही."
+                        ),
+                        fontSize = 12.sp,
+                        color = Color.Gray
+                    )
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = { showDetails = false }
+                ) {
+                    Text(
+                        tr("Close", "बंद करें", "बंद करा")
+                    )
+                }
+            }
+        )
+    }
+}
+
 
 @Composable
 private fun RewardsScreen(bottles: Int, points: Int, onRedeem: (Int) -> Boolean) {
@@ -998,7 +1414,14 @@ private fun AssistantScreen(onBack: () -> Unit) {
     var messages by remember {
         mutableStateOf(
             listOf(
-                ChatMessage(false, tr("Hi! I'm the ReTech Assistant. Ask me about recycling, points, or using the app.", "नमस्ते! मैं ReTech सहायक हूँ। रीसाइक्लिंग, अंकों या ऐप के उपयोग के बारे में पूछें।", "नमस्कार! मी ReTech सहाय्यक आहे. पुनर्वापर, गुण किंवा ॲप वापरण्याबद्दल विचारा."))
+                ChatMessage(
+                    false,
+                    tr(
+                        "Hi! I'm the ReTech Assistant. Ask me about recycling, points, or using the app.",
+                        "नमस्ते! मैं ReTech सहायक हूँ। रीसाइक्लिंग, अंकों या ऐप के उपयोग के बारे में पूछें।",
+                        "नमस्कार! मी ReTech सहाय्यक आहे. पुनर्वापर, गुण किंवा ॲप वापरण्याबद्दल विचारा."
+                    )
+                )
             )
         )
     }
@@ -1007,42 +1430,146 @@ private fun AssistantScreen(onBack: () -> Unit) {
         tr("How do I earn points?", "मुझे अंक कैसे मिलेंगे?", "मला गुण कसे मिळतील?"),
         tr("Where can I find a machine?", "मशीन कहां मिलेगी?", "मशीन कुठे मिळेल?")
     )
+    val density = LocalDensity.current
+    val keyboardVisible = WindowInsets.ime.getBottom(density) > 0
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+
     fun ask(question: String) {
         if (question.isBlank()) return
         val reply = assistantDemoAnswer(question)
         messages = messages + ChatMessage(true, question.trim()) + ChatMessage(false, reply)
         input = ""
     }
-    Column(Modifier.fillMaxSize().background(PageBackground)) {
-        Row(Modifier.fillMaxWidth().background(Color.White).padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("‹", Modifier.clickable(onClick = onBack).padding(end = 16.dp), fontSize = 30.sp, color = DarkGreen)
+
+    LaunchedEffect(messages.size, keyboardVisible) {
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.lastIndex)
+        }
+    }
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(PageBackground)
+            .imePadding()
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(Color.White)
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "‹",
+                Modifier.clickable(onClick = onBack).padding(end = 16.dp),
+                fontSize = 30.sp,
+                color = DarkGreen
+            )
             Column(Modifier.weight(1f)) {
-                Text(tr("ReTech Assistant", "ReTech सहायक", "ReTech सहाय्यक"), fontWeight = FontWeight.Bold, fontSize = 19.sp, color = DarkGreen)
-                Text(tr("Recycling help", "रीसाइक्लिंग सहायता", "पुनर्वापर मदत"), color = Color.Gray, fontSize = 11.sp)
+                Text(
+                    tr("ReTech Assistant", "ReTech सहायक", "ReTech सहाय्यक"),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 19.sp,
+                    color = DarkGreen
+                )
+                Text(
+                    tr("Recycling help", "रीसाइक्लिंग सहायता", "पुनर्वापर मदत"),
+                    color = Color.Gray,
+                    fontSize = 11.sp
+                )
             }
             Text("♻", fontSize = 25.sp, color = DarkGreen)
         }
-        Text(tr("Prototype assistant: replies are prewritten; live AI is not connected yet.", "प्रोटोटाइप सहायक: उत्तर पहले से लिखे गए हैं; लाइव AI अभी जुड़ा नहीं है।", "प्रोटोटाइप सहाय्यक: उत्तरे आधीच तयार आहेत; लाईव्ह AI अद्याप जोडलेले नाही."), Modifier.fillMaxWidth().background(Color(0xFFEAF6EE)).padding(10.dp), color = DarkGreen, fontSize = 11.sp, textAlign = TextAlign.Center)
-        LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp), contentPadding = PaddingValues(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+
+        if (!keyboardVisible) {
+            Text(
+                tr(
+                    "Prototype assistant: replies are prewritten; live AI is not connected yet.",
+                    "प्रोटोटाइप सहायक: उत्तर पहले से लिखे गए हैं; लाइव AI अभी जुड़ा नहीं है।",
+                    "प्रोटोटाइप सहाय्यक: उत्तरे आधीच तयार आहेत; लाईव्ह AI अद्याप जोडलेले नाही."
+                ),
+                Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFFEAF6EE))
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                color = DarkGreen,
+                fontSize = 10.sp,
+                textAlign = TextAlign.Center
+            )
+        }
+
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp),
+            contentPadding = PaddingValues(vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             items(messages) { message ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = if (message.fromUser) Arrangement.End else Arrangement.Start) {
-                    Box(Modifier.widthIn(max = 300.dp).clip(RoundedCornerShape(16.dp)).background(if (message.fromUser) DarkGreen else Color.White).padding(13.dp)) {
-                        Text(message.text, color = if (message.fromUser) Color.White else Color(0xFF26332C), fontSize = 14.sp)
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = if (message.fromUser) Arrangement.End else Arrangement.Start
+                ) {
+                    Box(
+                        Modifier
+                            .widthIn(max = 300.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(if (message.fromUser) DarkGreen else Color.White)
+                            .padding(12.dp)
+                    ) {
+                        Text(
+                            message.text,
+                            color = if (message.fromUser) Color.White else Color(0xFF26332C),
+                            fontSize = 14.sp
+                        )
                     }
                 }
             }
         }
-        if (messages.size <= 1) {
+
+        if (messages.size <= 1 && !keyboardVisible) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
                 suggestions.forEach { suggestion ->
-                    OutlinedButton(onClick = { ask(suggestion) }, modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp), contentPadding = PaddingValues(10.dp)) { Text(suggestion, fontSize = 12.sp) }
+                    OutlinedButton(
+                        onClick = { ask(suggestion) },
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 7.dp)
+                    ) {
+                        Text(suggestion, fontSize = 12.sp)
+                    }
                 }
             }
         }
-        Row(Modifier.fillMaxWidth().background(Color.White).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(value = input, onValueChange = { input = it }, modifier = Modifier.weight(1f), placeholder = { Text(tr("Ask a question...", "अपना सवाल लिखें...", "तुमचा प्रश्न लिहा...")) }, shape = RoundedCornerShape(24.dp), maxLines = 3)
-            Spacer(Modifier.width(8.dp))
-            Button(onClick = { ask(input) }, shape = CircleShape, contentPadding = PaddingValues(14.dp)) { Text("➤") }
+
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(Color.White)
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = input,
+                onValueChange = { input = it },
+                modifier = Modifier.weight(1f),
+                placeholder = {
+                    Text(tr("Ask a question...", "अपना सवाल लिखें...", "तुमचा प्रश्न लिहा..."))
+                },
+                shape = RoundedCornerShape(24.dp),
+                maxLines = 4
+            )
+            Spacer(Modifier.width(6.dp))
+            Button(
+                onClick = { ask(input) },
+                enabled = input.isNotBlank(),
+                shape = CircleShape,
+                contentPadding = PaddingValues(12.dp)
+            ) {
+                Text("➤")
+            }
         }
     }
 }
